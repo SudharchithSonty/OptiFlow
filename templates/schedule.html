@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Visualization | CNC Job Shop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">⚙</span>
+                    <h1>CNC Job Shop<span class="highlight">Scheduler</span></h1>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Dashboard</a>
+                    <a href="/schedule" class="nav-link active">Gantt Chart</a>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content gantt-page">
+            <!-- Controls -->
+            <section class="panel controls-panel">
+                <div class="controls-row">
+                    <div class="schedule-toggle">
+                        <button class="toggle-btn" id="baselineBtn" onclick="loadSchedule('baseline')">
+                            Baseline (EDD)
+                        </button>
+                        <button class="toggle-btn active" id="optimizedBtn" onclick="loadSchedule('optimized')">
+                            Optimized (CP-SAT)
+                        </button>
+                    </div>
+                    <div class="schedule-info" id="scheduleInfo"></div>
+                </div>
+                
+                <!-- Legend -->
+                <div class="legend">
+                    <span class="legend-title">Family Colors:</span>
+                    <div class="legend-items" id="legendItems"></div>
+                    <span class="legend-separator">|</span>
+                    <span class="legend-item">
+                        <span class="legend-dot bottleneck"></span>
+                        M03 (Bottleneck)
+                    </span>
+                </div>
+            </section>
+
+            <!-- Gantt Chart -->
+            <section class="panel gantt-panel">
+                <div class="gantt-container" id="ganttContainer">
+                    <div class="loading-message">Loading schedule data...</div>
+                </div>
+            </section>
+
+            <!-- Operation Details -->
+            <section class="panel details-panel" id="detailsPanel" style="display: none;">
+                <h3>Operation Details</h3>
+                <div id="operationDetails"></div>
+            </section>
+
+            <!-- M03 Sequence -->
+            <section class="panel sequence-panel" id="sequencePanel" style="display: none;">
+                <h3>M03 (Bottleneck) Sequence</h3>
+                <div class="sequence-container" id="m03Sequence"></div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>CNC Job Shop Operations Assistant • MVP Demo</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/schedule.js') }}"></script>
+    <script>
+        let scheduleData = null;
+        let currentType = 'optimized';
+        
+        // Family colors
+        const familyColors = {
+            'F1': '#FF6B6B',
+            'F2': '#4ECDC4',
+            'F3': '#FFE66D',
+            'F4': '#95E1D3',
+            'F5': '#A66CFF',
+            'F6': '#FF9F43'
+        };
+
+        // Initialize legend
+        function initLegend() {
+            const legendItems = document.getElementById('legendItems');
+            legendItems.innerHTML = Object.entries(familyColors).map(([family, color]) => `
+                <span class="legend-item">
+                    <span class="legend-dot" style="background: ${color}"></span>
+                    ${family}
+                </span>
+            `).join('');
+        }
+
+        // Load schedule data
+        function loadSchedule(type) {
+            currentType = type;
+            
+            // Update toggle buttons
+            document.getElementById('baselineBtn').classList.toggle('active', type === 'baseline');
+            document.getElementById('optimizedBtn').classList.toggle('active', type === 'optimized');
+            
+            const container = document.getElementById('ganttContainer');
+            container.innerHTML = '<div class="loading-message">Loading schedule...</div>';
+
+            fetch('/api/schedule', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    scheduleData = data;
+                    const schedule = type === 'baseline' ? data.baseline : data.optimized;
+                    updateScheduleInfo(schedule, type);
+                    renderGantt(schedule.schedule, data.machines, type);
+                    renderM03Sequence(schedule.schedule, type);
+                } else {
+                    container.innerHTML = `<div class="error-message">Error: ${data.message}</div>`;
+                }
+            })
+            .catch(error => {
+                container.innerHTML = `<div class="error-message">Error loading schedule: ${error}</div>`;
+            });
+        }
+
+        function updateScheduleInfo(schedule, type) {
+            const info = document.getElementById('scheduleInfo');
+            const typeName = type === 'baseline' ? 'Baseline (EDD)' : 'Optimized (CP-SAT)';
+            const status = type === 'optimized' && schedule.solver_status ? ` • ${schedule.solver_status}` : '';
+            
+            info.innerHTML = `
+                <span class="info-badge">${typeName}${status}</span>
+                <span class="info-stat">Makespan: <strong>${formatMinutes(schedule.makespan)}</strong></span>
+                <span class="info-stat">Operations: <strong>${schedule.schedule.length}</strong></span>
+            `;
+        }
+
+        function renderGantt(schedule, machines, type) {
+            const container = document.getElementById('ganttContainer');
+            
+            if (!schedule || schedule.length === 0) {
+                container.innerHTML = '<div class="error-message">No schedule data available. Run the scheduler first.</div>';
+                return;
+            }
+
+            // Group operations by machine
+            const machineOps = {};
+            let maxTime = 0;
+            
+            machines.forEach(m => {
+                machineOps[m.machine_id] = [];
+            });
+            
+            schedule.forEach(op => {
+                if (!machineOps[op.machine_id]) {
+                    machineOps[op.machine_id] = [];
+                }
+                machineOps[op.machine_id].push(op);
+                maxTime = Math.max(maxTime, op.end_time_min);
+            });
+
+            // Sort machines and operations
+            const machineIds = Object.keys(machineOps).sort();
+            machineIds.forEach(mid => {
+                machineOps[mid].sort((a, b) => a.start_time_min - b.start_time_min);
+            });
+
+            // Calculate time scale
+            const timeStep = calculateTimeStep(maxTime);
+            
+            // Build Gantt HTML
+            let html = `
+                <div class="gantt-chart">
+                    <div class="gantt-header">
+                        <div class="gantt-label-header">Machine</div>
+                        <div class="gantt-timeline-header">
+                            <div class="time-markers">
+            `;
+            
+            // Time markers
+            for (let t = 0; t <= maxTime; t += timeStep) {
+                const left = (t / maxTime * 100);
+                html += `<span class="time-marker" style="left: ${left}%">${formatTimeMarker(t)}</span>`;
+            }
+            
+            html += `
+                            </div>
+                        </div>
+                    </div>
+                    <div class="gantt-body">
+            `;
+
+            // Machine rows
+            machineIds.forEach(machineId => {
+                const isBottleneck = machineId === 'M03';
+                const rowClass = isBottleneck ? 'gantt-row bottleneck' : 'gantt-row';
+                
+                html += `
+                    <div class="${rowClass}">
+                        <div class="gantt-label">
+                            <span class="machine-name">${machineId}</span>
+                            ${isBottleneck ? '<span class="bottleneck-badge">★</span>' : ''}
+                        </div>
+                        <div class="gantt-timeline">
+                `;
+                
+                // Operation bars
+                machineOps[machineId].forEach((op, idx) => {
+                    const left = (op.start_time_min / maxTime * 100);
+                    const width = Math.max(0.5, (op.duration_min / maxTime * 100));
+                    const color = familyColors[op.family_id] || '#888';
+                    const borderColor = isBottleneck ? '#000' : adjustColor(color, -30);
+                    
+                    html += `
+                        <div class="gantt-bar" 
+                             style="left: ${left}%; width: ${width}%; background: ${color}; border-color: ${borderColor};"
+                             onclick="showOperationDetails('${op.op_id}')"
+                             data-op-id="${op.op_id}">
+                            <span class="bar-label">${op.op_id}</span>
+                            <div class="bar-tooltip">
+                                <strong>${op.op_id}</strong><br>
+                                Order: ${op.order_id}<br>
+                                Family: ${op.family_id}<br>
+                                Duration: ${op.duration_min.toFixed(0)} min<br>
+                                ${op.start_time_min} → ${op.end_time_min}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Setup time indicator (for M03, show between operations of different families)
+                    if (isBottleneck && idx > 0) {
+                        const prevOp = machineOps[machineId][idx - 1];
+                        const gap = op.start_time_min - prevOp.end_time_min;
+                        if (gap > 0 && prevOp.family_id !== op.family_id) {
+                            const setupLeft = (prevOp.end_time_min / maxTime * 100);
+                            const setupWidth = (gap / maxTime * 100);
+                            html += `
+                                <div class="setup-indicator" 
+                                     style="left: ${setupLeft}%; width: ${setupWidth}%;"
+                                     title="Setup: ${prevOp.family_id} → ${op.family_id} (${gap.toFixed(0)} min)">
+                                    ⚡
+                                </div>
+                            `;
+                        }
+                    }
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        function renderM03Sequence(schedule, type) {
+            const panel = document.getElementById('sequencePanel');
+            const container = document.getElementById('m03Sequence');
+            
+            const m03Ops = schedule
+                .filter(op => op.machine_id === 'M03')
+                .sort((a, b) => a.start_time_min - b.start_time_min);
+            
+            if (m03Ops.length === 0) {
+                panel.style.display = 'none';
+                return;
+            }
+            
+            let html = '<div class="sequence-flow">';
+            
+            m03Ops.forEach((op, idx) => {
+                const color = familyColors[op.family_id] || '#888';
+                const isSwitch = idx > 0 && m03Ops[idx - 1].family_id !== op.family_id;
+                
+                if (idx > 0) {
+                    const gap = op.start_time_min - m03Ops[idx - 1].end_time_min;
+                    html += `
+                        <div class="sequence-arrow ${isSwitch ? 'switch' : ''}">
+                            →
+                            ${isSwitch ? `<span class="setup-time">${gap.toFixed(0)}m</span>` : ''}
+                        </div>
+                    `;
+                }
+                
+                html += `
+                    <div class="sequence-op" style="border-color: ${color}; background: ${color}20;">
+                        <div class="seq-op-id">${op.op_id}</div>
+                        <div class="seq-op-family" style="background: ${color}">${op.family_id}</div>
+                        <div class="seq-op-duration">${op.duration_min.toFixed(0)}m</div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            // Summary
+            const familySwitches = m03Ops.filter((op, idx) => 
+                idx > 0 && m03Ops[idx - 1].family_id !== op.family_id
+            ).length;
+            
+            html += `
+                <div class="sequence-summary">
+                    <span>Total Operations: <strong>${m03Ops.length}</strong></span>
+                    <span>Family Switches: <strong>${familySwitches}</strong></span>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+            panel.style.display = 'block';
+        }
+
+        function showOperationDetails(opId) {
+            if (!scheduleData) return;
+            
+            const schedule = currentType === 'baseline' ? 
+                scheduleData.baseline.schedule : 
+                scheduleData.optimized.schedule;
+            
+            const op = schedule.find(o => o.op_id === opId);
+            if (!op) return;
+            
+            const order = scheduleData.orders.find(o => o.order_id === op.order_id);
+            const color = familyColors[op.family_id] || '#888';
+            
+            const panel = document.getElementById('detailsPanel');
+            const details = document.getElementById('operationDetails');
+            
+            const isOnTime = order && op.end_time_min <= order.due_time_min;
+            
+            details.innerHTML = `
+                <div class="detail-card">
+                    <div class="detail-header" style="border-left-color: ${color}">
+                        <h4>${op.op_id}</h4>
+                        <span class="family-badge" style="background: ${color}">${op.family_id}</span>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Order</span>
+                            <span class="detail-value">${op.order_id}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Machine</span>
+                            <span class="detail-value">${op.machine_id}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Duration</span>
+                            <span class="detail-value">${op.duration_min.toFixed(0)} min</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Start Time</span>
+                            <span class="detail-value">${formatMinutes(op.start_time_min)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">End Time</span>
+                            <span class="detail-value">${formatMinutes(op.end_time_min)}</span>
+                        </div>
+                        ${order ? `
+                        <div class="detail-item">
+                            <span class="detail-label">Due Time</span>
+                            <span class="detail-value ${isOnTime ? 'on-time' : 'late'}">${formatMinutes(order.due_time_min)}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            
+            panel.style.display = 'block';
+            
+            // Highlight the bar
+            document.querySelectorAll('.gantt-bar').forEach(bar => {
+                bar.classList.remove('selected');
+                if (bar.dataset.opId === opId) {
+                    bar.classList.add('selected');
+                }
+            });
+        }
+
+        function calculateTimeStep(maxTime) {
+            if (maxTime <= 500) return 60;
+            if (maxTime <= 2000) return 200;
+            if (maxTime <= 5000) return 500;
+            return 1000;
+        }
+
+        function formatTimeMarker(minutes) {
+            const hours = Math.floor(minutes / 60);
+            const mins = minutes % 60;
+            return `${hours}:${mins.toString().padStart(2, '0')}`;
+        }
+
+        function formatMinutes(minutes) {
+            if (!minutes && minutes !== 0) return 'N/A';
+            const hours = Math.floor(minutes / 60);
+            const mins = Math.round(minutes % 60);
+            if (hours > 0) {
+                return `${hours}h ${mins}m`;
+            }
+            return `${mins}m`;
+        }
+
+        function adjustColor(color, amount) {
+            const hex = color.replace('#', '');
+            const r = Math.max(0, Math.min(255, parseInt(hex.slice(0, 2), 16) + amount));
+            const g = Math.max(0, Math.min(255, parseInt(hex.slice(2, 4), 16) + amount));
+            const b = Math.max(0, Math.min(255, parseInt(hex.slice(4, 6), 16) + amount));
+            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        }
+
+        // Initialize
+        window.onload = () => {
+            initLegend();
+            loadSchedule('optimized');
+        };
+    </script>
+</body>
+</html>

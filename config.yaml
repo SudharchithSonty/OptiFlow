@@ -1,0 +1,153 @@
+# CNC Job Shop Data Generator Configuration
+# This file documents the configuration parameters used by the data generator.
+# Note: The generator uses data_generator/config.py as the source of truth.
+# This YAML is for reference and external configuration tools.
+
+# =============================================================================
+# Random Seed
+# =============================================================================
+# Controls reproducibility of generated data
+random_seed: 42
+
+# =============================================================================
+# Horizon Settings
+# =============================================================================
+# Scheduling window configuration
+horizon_days: 3
+shift_start: "09:00"
+shift_end: "18:00"
+shift_duration_min: 540  # 9 hours
+
+# =============================================================================
+# Machine Configuration
+# =============================================================================
+# For MVP: M03 is the only MILL machine (bottleneck with sequence-dependent setup)
+machine_types:
+  - TURN
+  - MILL
+  - DRILL
+  - GRIND
+  - CMM
+
+machines:
+  - machine_id: M01
+    machine_type: TURN
+    is_bottleneck: false
+  - machine_id: M02
+    machine_type: TURN
+    is_bottleneck: false
+  - machine_id: M03
+    machine_type: MILL
+    is_bottleneck: true   # Bottleneck - uses AddCircuit transitions
+  - machine_id: M04
+    machine_type: DRILL
+    is_bottleneck: false
+  - machine_id: M05
+    machine_type: DRILL
+    is_bottleneck: false
+  - machine_id: M06
+    machine_type: GRIND
+    is_bottleneck: false
+  - machine_id: M07
+    machine_type: GRIND
+    is_bottleneck: false
+  - machine_id: M08
+    machine_type: CMM
+    is_bottleneck: false
+
+# =============================================================================
+# Product Configuration
+# =============================================================================
+# SKU and family settings
+families:
+  - F1
+  - F2
+  - F3
+  - F4
+  - F5
+  - F6
+
+num_skus: 15
+ops_per_sku_min: 2
+ops_per_sku_max: 4
+
+# =============================================================================
+# Processing Time Ranges
+# =============================================================================
+# Minutes per unit by operation type
+proc_time_ranges:
+  TURN:
+    min: 2.0
+    max: 8.0
+  MILL:
+    min: 3.0
+    max: 12.0
+  DRILL:
+    min: 1.5
+    max: 6.0
+  GRIND:
+    min: 2.0
+    max: 5.0
+  CMM:
+    min: 0.5
+    max: 2.0
+
+# =============================================================================
+# Order Configuration
+# =============================================================================
+# Reduced quantities for MVP to ensure feasibility within 3-day horizon
+order_qty_min: 20
+order_qty_max: 80
+
+# Maximum operation duration (must fit within shift with buffer)
+max_operation_duration_min: 360  # 6 hours max per operation
+
+# =============================================================================
+# Changeover Configuration
+# =============================================================================
+# Sequence-dependent setup times (asymmetric family→family transitions)
+
+changeover_same_family:
+  internal_min:
+    min: 5
+    max: 15
+  external_min:
+    min: 5
+    max: 10
+  reject_prob:
+    min: 0.02
+    max: 0.08
+
+changeover_different_family:
+  internal_min:
+    min: 25
+    max: 90
+  external_min:
+    min: 10
+    max: 30
+  reject_prob:
+    min: 0.08
+    max: 0.25
+
+# =============================================================================
+# Scheduling Parameters
+# =============================================================================
+# Priority levels for orders
+priority_levels:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+
+# Base date for generation (start of horizon)
+base_date: "2025-12-15"
+
+# =============================================================================
+# Solver Configuration
+# =============================================================================
+# CP-SAT solver parameters
+solver:
+  max_time_seconds: 30
+  bottleneck_machine_id: M03
+  objective: makespan_plus_switches  # makespan + tiny penalty for family switches

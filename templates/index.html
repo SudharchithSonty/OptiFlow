@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CNC Job Shop Scheduler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">⚙</span>
+                    <h1>CNC Job Shop<span class="highlight">Scheduler</span></h1>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link active">Dashboard</a>
+                    <a href="/schedule" class="nav-link">Gantt Chart</a>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Status Bar -->
+            <div class="status-bar" id="statusBar">
+                <div class="status-indicator" id="dataStatus">
+                    <span class="dot"></span>
+                    <span class="label">Checking data...</span>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <section class="panel control-panel">
+                <h2 class="panel-title">
+                    <span class="icon">📊</span>
+                    Data Generation
+                </h2>
+                <div class="control-row">
+                    <div class="input-group">
+                        <label for="seedInput">Random Seed</label>
+                        <input type="number" id="seedInput" value="42" min="1" max="9999">
+                    </div>
+                    <button class="btn btn-primary" id="generateBtn" onclick="generateData()">
+                        <span class="btn-icon">🎲</span>
+                        Generate Data
+                    </button>
+                    <button class="btn btn-accent" id="scheduleBtn" onclick="runScheduler()" disabled>
+                        <span class="btn-icon">🚀</span>
+                        Run Scheduler
+                    </button>
+                </div>
+                <div class="status-message" id="generateStatus"></div>
+            </section>
+
+            <!-- Data Summary -->
+            <section class="panel summary-panel" id="summaryPanel" style="display: none;">
+                <h2 class="panel-title">
+                    <span class="icon">📋</span>
+                    Data Summary
+                </h2>
+                <div class="summary-grid" id="summaryGrid"></div>
+            </section>
+
+            <!-- KPI Dashboard -->
+            <section class="panel kpi-panel" id="kpiPanel" style="display: none;">
+                <h2 class="panel-title">
+                    <span class="icon">📈</span>
+                    KPI Comparison
+                </h2>
+                <div class="kpi-grid" id="kpiGrid"></div>
+                <div class="kpi-table-container" id="kpiTableContainer"></div>
+            </section>
+
+            <!-- Schedule Preview -->
+            <section class="panel schedule-preview" id="schedulePreview" style="display: none;">
+                <h2 class="panel-title">
+                    <span class="icon">📅</span>
+                    Schedule Results
+                </h2>
+                <div class="schedule-summary" id="scheduleSummary"></div>
+                <a href="/schedule" class="btn btn-secondary view-gantt-btn">
+                    <span class="btn-icon">📊</span>
+                    View Full Gantt Chart
+                </a>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>CNC Job Shop Operations Assistant • MVP Demo</p>
+        </footer>
+    </div>
+
+    <script>
+        // Check data status on load
+        window.onload = checkDataStatus;
+
+        function checkDataStatus() {
+            fetch('/api/data/summary')
+                .then(response => response.json())
+                .then(data => {
+                    const statusBar = document.getElementById('statusBar');
+                    const dataStatus = document.getElementById('dataStatus');
+                    
+                    if (data.status === 'success' && data.has_data) {
+                        dataStatus.innerHTML = `
+                            <span class="dot active"></span>
+                            <span class="label">Data loaded: ${data.summary.operations} operations, ${data.summary.orders} orders</span>
+                        `;
+                        document.getElementById('scheduleBtn').disabled = false;
+                        showSummary(data.summary);
+                    } else {
+                        dataStatus.innerHTML = `
+                            <span class="dot"></span>
+                            <span class="label">No data - Generate data to start</span>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking data:', error);
+                });
+        }
+
+        function showSummary(summary) {
+            const panel = document.getElementById('summaryPanel');
+            const grid = document.getElementById('summaryGrid');
+            
+            grid.innerHTML = `
+                <div class="summary-card">
+                    <div class="summary-value">${summary.operations}</div>
+                    <div class="summary-label">Operations</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value">${summary.orders}</div>
+                    <div class="summary-label">Orders</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value">${summary.machines}</div>
+                    <div class="summary-label">Machines</div>
+                </div>
+                <div class="summary-card highlight">
+                    <div class="summary-value">${summary.m03_operations || 'N/A'}</div>
+                    <div class="summary-label">M03 Operations</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value">${formatMinutes(summary.horizon_minutes)}</div>
+                    <div class="summary-label">Horizon</div>
+                </div>
+            `;
+            panel.style.display = 'block';
+        }
+
+        function generateData() {
+            const btn = document.getElementById('generateBtn');
+            const status = document.getElementById('generateStatus');
+            const seed = document.getElementById('seedInput').value || 42;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="btn-icon">⏳</span> Generating...';
+            status.innerHTML = '<span class="loading">Generating synthetic data...</span>';
+
+            fetch('/api/generate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({seed: parseInt(seed)})
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-icon">🎲</span> Generate Data';
+                
+                if (data.status === 'success') {
+                    status.innerHTML = `<span class="success">✓ Data generated successfully</span>`;
+                    document.getElementById('scheduleBtn').disabled = false;
+                    showSummary(data.summary);
+                    
+                    // Update status bar
+                    const dataStatus = document.getElementById('dataStatus');
+                    dataStatus.innerHTML = `
+                        <span class="dot active"></span>
+                        <span class="label">Data loaded: ${data.summary.operations} operations, ${data.summary.orders} orders</span>
+                    `;
+                    
+                    // Hide KPI panel until scheduler runs
+                    document.getElementById('kpiPanel').style.display = 'none';
+                    document.getElementById('schedulePreview').style.display = 'none';
+                } else {
+                    status.innerHTML = `<span class="error">✗ Error: ${data.message}</span>`;
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-icon">🎲</span> Generate Data';
+                status.innerHTML = `<span class="error">✗ Error: ${error}</span>`;
+            });
+        }
+
+        function runScheduler() {
+            const btn = document.getElementById('scheduleBtn');
+            const status = document.getElementById('generateStatus');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="btn-icon">⏳</span> Scheduling...';
+            status.innerHTML = '<span class="loading">Running CP-SAT optimizer...</span>';
+
+            fetch('/api/schedule', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-icon">🚀</span> Run Scheduler';
+                
+                if (data.status === 'success') {
+                    const improvement = ((data.baseline.makespan - data.optimized.makespan) / data.baseline.makespan * 100).toFixed(1);
+                    status.innerHTML = `<span class="success">✓ Scheduling complete - ${improvement}% improvement</span>`;
+                    
+                    showKPIs(data.baseline.kpis, data.optimized.kpis);
+                    showScheduleSummary(data);
+                } else {
+                    status.innerHTML = `<span class="error">✗ Error: ${data.message}</span>`;
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-icon">🚀</span> Run Scheduler';
+                status.innerHTML = `<span class="error">✗ Error: ${error}</span>`;
+            });
+        }
+
+        function showKPIs(baseline, optimized) {
+            const panel = document.getElementById('kpiPanel');
+            const grid = document.getElementById('kpiGrid');
+            const tableContainer = document.getElementById('kpiTableContainer');
+            
+            // Calculate improvements
+            const makespanImprove = ((baseline.makespan - optimized.makespan) / baseline.makespan * 100).toFixed(1);
+            const switchesImprove = baseline.family_switches - optimized.family_switches;
+            
+            // KPI Cards
+            grid.innerHTML = `
+                <div class="kpi-card improvement">
+                    <div class="kpi-value">${makespanImprove}%</div>
+                    <div class="kpi-label">Makespan Reduction</div>
+                    <div class="kpi-detail">${baseline.makespan} → ${optimized.makespan} min</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value">${optimized.on_time_delivery_pct.toFixed(1)}%</div>
+                    <div class="kpi-label">On-Time Delivery</div>
+                    <div class="kpi-detail">Baseline: ${baseline.on_time_delivery_pct.toFixed(1)}%</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value">${optimized.machine_utilization_pct.toFixed(1)}%</div>
+                    <div class="kpi-label">Machine Utilization</div>
+                    <div class="kpi-detail">Baseline: ${baseline.machine_utilization_pct.toFixed(1)}%</div>
+                </div>
+                <div class="kpi-card ${switchesImprove > 0 ? 'improvement' : ''}">
+                    <div class="kpi-value">${optimized.family_switches}</div>
+                    <div class="kpi-label">Family Switches (M03)</div>
+                    <div class="kpi-detail">Baseline: ${baseline.family_switches} (${switchesImprove >= 0 ? '-' : '+'}${Math.abs(switchesImprove)})</div>
+                </div>
+            `;
+            
+            // KPI Table
+            tableContainer.innerHTML = `
+                <table class="kpi-table">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Baseline</th>
+                            <th>Optimized</th>
+                            <th>Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Makespan</td>
+                            <td>${formatMinutes(baseline.makespan)}</td>
+                            <td>${formatMinutes(optimized.makespan)}</td>
+                            <td class="positive">↓ ${makespanImprove}%</td>
+                        </tr>
+                        <tr>
+                            <td>On-Time Delivery</td>
+                            <td>${baseline.on_time_delivery_pct.toFixed(1)}%</td>
+                            <td>${optimized.on_time_delivery_pct.toFixed(1)}%</td>
+                            <td class="${optimized.on_time_delivery_pct >= baseline.on_time_delivery_pct ? 'positive' : 'negative'}">
+                                ${optimized.on_time_delivery_pct >= baseline.on_time_delivery_pct ? '↑' : '↓'} 
+                                ${Math.abs(optimized.on_time_delivery_pct - baseline.on_time_delivery_pct).toFixed(1)}%
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Machine Utilization</td>
+                            <td>${baseline.machine_utilization_pct.toFixed(1)}%</td>
+                            <td>${optimized.machine_utilization_pct.toFixed(1)}%</td>
+                            <td class="${optimized.machine_utilization_pct >= baseline.machine_utilization_pct ? 'positive' : 'negative'}">
+                                ${optimized.machine_utilization_pct >= baseline.machine_utilization_pct ? '↑' : '↓'} 
+                                ${Math.abs(optimized.machine_utilization_pct - baseline.machine_utilization_pct).toFixed(1)}%
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Setup Time (M03)</td>
+                            <td>${baseline.total_setup_time_min} min</td>
+                            <td>${optimized.total_setup_time_min} min</td>
+                            <td class="${optimized.total_setup_time_min <= baseline.total_setup_time_min ? 'positive' : 'negative'}">
+                                ${optimized.total_setup_time_min <= baseline.total_setup_time_min ? '↓' : '↑'} 
+                                ${Math.abs(baseline.total_setup_time_min - optimized.total_setup_time_min)} min
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Family Switches (M03)</td>
+                            <td>${baseline.family_switches}</td>
+                            <td>${optimized.family_switches}</td>
+                            <td class="${optimized.family_switches <= baseline.family_switches ? 'positive' : 'negative'}">
+                                ${optimized.family_switches <= baseline.family_switches ? '↓' : '↑'} 
+                                ${Math.abs(baseline.family_switches - optimized.family_switches)}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+            
+            panel.style.display = 'block';
+        }
+
+        function showScheduleSummary(data) {
+            const panel = document.getElementById('schedulePreview');
+            const summary = document.getElementById('scheduleSummary');
+            
+            const baselineM03 = data.baseline.schedule.filter(op => op.machine_id === 'M03');
+            const optimizedM03 = data.optimized.schedule.filter(op => op.machine_id === 'M03');
+            
+            summary.innerHTML = `
+                <div class="schedule-stats">
+                    <div class="stat-group">
+                        <h3>Baseline (EDD)</h3>
+                        <div class="stat">Makespan: <strong>${formatMinutes(data.baseline.makespan)}</strong></div>
+                        <div class="stat">Total Operations: <strong>${data.baseline.schedule.length}</strong></div>
+                        <div class="stat">M03 Operations: <strong>${baselineM03.length}</strong></div>
+                    </div>
+                    <div class="stat-group optimized">
+                        <h3>Optimized (CP-SAT)</h3>
+                        <div class="stat">Makespan: <strong>${formatMinutes(data.optimized.makespan)}</strong></div>
+                        <div class="stat">Total Operations: <strong>${data.optimized.schedule.length}</strong></div>
+                        <div class="stat">M03 Operations: <strong>${optimizedM03.length}</strong></div>
+                        <div class="stat">Solver Status: <strong class="status-badge">${data.optimized.solver_status}</strong></div>
+                    </div>
+                </div>
+            `;
+            
+            panel.style.display = 'block';
+        }
+
+        function formatMinutes(minutes) {
+            if (!minutes) return 'N/A';
+            const hours = Math.floor(minutes / 60);
+            const mins = Math.round(minutes % 60);
+            if (hours > 0) {
+                return `${hours}h ${mins}m`;
+            }
+            return `${mins}m`;
+        }
+    </script>
+</body>
+</html>
