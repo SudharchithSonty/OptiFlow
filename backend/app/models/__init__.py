@@ -1,16 +1,21 @@
-"""SQLAlchemy ORM models for multi-tenant CNC Job Shop."""
+"""SQLAlchemy ORM models for OptiFlow."""
 
 from backend.app.models.org import Org
 from backend.app.models.user import User
-from backend.app.models.membership import Membership
+from backend.app.models.membership import Membership, MembershipRole
+from backend.app.models.machine import Machine
+from backend.app.models.customer import Customer
+from backend.app.models.product import Product
+from backend.app.models.order import Order
 from backend.app.models.run import Run, RunStatus, RunTrigger, RescheduleMode
-from backend.app.models.artifact import Artifact, ArtifactKind
+from backend.app.models.schedule_operation import ScheduleOperation
+from backend.app.models.run_metric import RunMetric
 from backend.app.models.event import Event, EventType
+from backend.app.models.alert import Alert
+from backend.app.models.artifact import Artifact, ArtifactKind
 from backend.app.models.draft_impact_report import DraftImpactReport
 from backend.app.models.setup_actual import SetupActual
 from backend.app.models.quality_check import QualityCheck, QualityResult
-from backend.app.models.knowledge_document import KnowledgeDocument, DocumentStatus
-from backend.app.models.knowledge_chunk import KnowledgeChunk
 from backend.app.models.agent_job import (
     AgentJob,
     AgentJobType,
@@ -19,31 +24,29 @@ from backend.app.models.agent_job import (
 )
 
 __all__ = [
-    # Core entities
     "Org",
     "User",
     "Membership",
-    # Runs
+    "MembershipRole",
+    "Machine",
+    "Customer",
+    "Product",
+    "Order",
     "Run",
     "RunStatus",
     "RunTrigger",
     "RescheduleMode",
-    "Artifact",
-    "ArtifactKind",
-    # Events
+    "ScheduleOperation",
+    "RunMetric",
     "Event",
     "EventType",
-    # Drafts
+    "Alert",
+    "Artifact",
+    "ArtifactKind",
     "DraftImpactReport",
-    # Actuals
     "SetupActual",
     "QualityCheck",
     "QualityResult",
-    # Knowledge Base (RAG)
-    "KnowledgeDocument",
-    "DocumentStatus",
-    "KnowledgeChunk",
-    # Agent Jobs (AI metrics/audit)
     "AgentJob",
     "AgentJobType",
     "AgentJobTrigger",

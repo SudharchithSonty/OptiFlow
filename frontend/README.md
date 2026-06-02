@@ -1,11 +1,32 @@
+# OptiFlow Frontend
 
-  # Build Tablet-Friendly App
+Vite + React + TypeScript SPA.
 
-  This is a code bundle for Build Tablet-Friendly App. The original project is available at https://www.figma.com/design/FnQMCIOTM4kI2droItu3hG/Build-Tablet-Friendly-App.
+## Setup
 
-  ## Running the code
+```bash
+npm install
+npm run dev       # Start dev server on http://localhost:3000
+npm run build     # Type-check + production build
+npm run type-check # TypeScript only (no build)
+```
 
-  Run `npm i` to install the dependencies.
+## API Integration
 
-  Run `npm run dev` to start the development server.
-  
+The Vite dev server proxies `/api` requests to `http://localhost:8000` (configured in `vite.config.ts`).
+
+Use the typed API client at `src/lib/api/client.ts` to make backend calls:
+
+```typescript
+import { api } from "@/lib/api/client";
+
+const machines = await api.get<MachineResponse[]>(`/api/v1/orgs/${orgId}/machines`);
+```
+
+## Structure
+
+- `src/App.tsx` — Routes and app shell (currently uses mock user data)
+- `src/components/` — All UI components (currently using mock data from `src/types/index.ts`)
+- `src/lib/api/` — API client and Zod schemas (skeleton, extend per slice)
+- `src/lib/auth/` — JWT token helpers (implemented)
+- `src/types/index.ts` — TypeScript interfaces and mock data (replace with API calls)

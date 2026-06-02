@@ -17,11 +17,11 @@ if TYPE_CHECKING:
 
 
 class MembershipRole(str, Enum):
-    """Roles within an organization."""
+    """Roles within an organization, matching frontend UserRole."""
     OWNER = "owner"
+    PLANNER = "planner"
+    SUPERVISOR = "supervisor"
     ADMIN = "admin"
-    MEMBER = "member"
-    VIEWER = "viewer"
 
 
 class Membership(Base):
@@ -56,8 +56,8 @@ class Membership(Base):
     role: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        default=MembershipRole.MEMBER.value,
-        comment="Role within the org: owner/admin/member/viewer",
+        default=MembershipRole.PLANNER.value,
+        comment="Role within the org: owner/planner/supervisor/admin",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

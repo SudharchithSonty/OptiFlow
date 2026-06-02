@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router';
 import { Home, BarChart3, Users, Settings, ClipboardList, Calendar, Bell, LogOut, Moon, Sun, Bot, Menu, X } from 'lucide-react';
 
-// v1.0.1 - Fixed RBAC workflow for permission denied page
 import { DarkModeProvider, useDarkMode } from './components/DarkModeContext';
 
 // Auth Components
@@ -68,10 +67,6 @@ import { AgentJobDetailFailedPage } from './components/agent/AgentJobDetailFaile
 import { AIMetricsPage } from './components/agent/AIMetricsPage';
 import { PermissionDeniedPublishPage } from './components/shared/PermissionDeniedPublishPage';
 
-// Demo Components
-import { StatesDemo } from './components/StatesDemo';
-import { OptiFlowIADiagram } from './components/OptiFlowIADiagram';
-import { AIAgentFlowDiagram } from './components/AIAgentFlowDiagram';
 
 type UserRole = 'owner' | 'planner' | 'supervisor';
 
@@ -98,33 +93,23 @@ function AppLayout() {
     // ALWAYS prioritize role from navigation state (from login) first
     const stateRole = location.state?.role as UserRole | undefined;
     
-    console.log('🔍 getInitialUser called with location.state.role:', stateRole);
-    
     if (stateRole) {
       const user = mockUsers.find(u => u.role === stateRole);
       if (user) {
-        console.log('✅ Found user from state:', user.name, '(', user.role, ')');
-        // Save to localStorage immediately
         localStorage.setItem('currentUserRole', stateRole);
         return user;
       }
     }
     
-    // Fallback to localStorage only if no state role
     const savedRole = localStorage.getItem('currentUserRole') as UserRole | null;
-    console.log('📦 localStorage role:', savedRole);
-    
     if (savedRole) {
       const user = mockUsers.find(u => u.role === savedRole);
       if (user) {
-        console.log('✅ Found user from localStorage:', user.name, '(', user.role, ')');
         return user;
       }
     }
     
-    // Default fallback
-    console.log('⚠️ Using default fallback: planner');
-    return mockUsers[1]; // planner
+    return mockUsers[1];
   };
   
   const [currentUser, setCurrentUser] = useState<User>(getInitialUser);
@@ -151,15 +136,11 @@ function AppLayout() {
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
 
-  // CRITICAL: Update user and localStorage whenever location changes
   useEffect(() => {
     const stateRole = location.state?.role as UserRole | undefined;
-    console.log('🔄 useEffect triggered, location.state.role:', stateRole);
-    
     if (stateRole) {
       const user = mockUsers.find(u => u.role === stateRole);
       if (user && user.role !== currentUser.role) {
-        console.log('✨ Switching user role from', currentUser.role, 'to', user.role, '(', user.name, ')');
         setCurrentUser(user);
         localStorage.setItem('currentUserRole', stateRole);
       }
@@ -168,12 +149,9 @@ function AppLayout() {
 
   useEffect(() => {
     const savedRole = localStorage.getItem('currentUserRole') as UserRole | null;
-    console.log('📦 localStorage role:', savedRole);
-    
     if (savedRole) {
       const user = mockUsers.find(u => u.role === savedRole);
       if (user) {
-        console.log('✅ Found user from localStorage:', user.name, '(', user.role, ')');
         setCurrentUser(user);
       }
     }
@@ -383,10 +361,6 @@ function AppLayout() {
             <Route path="/users" element={<UsersRolesPage />} />
             <Route path="/settings" element={<OrgSettingsPage />} />
             <Route path="/permissions" element={<RBACPermissionsPage />} />
-            {/* Demo Routes */}
-            <Route path="/demo/states" element={<StatesDemo />} />
-            <Route path="/demo/opti-flow-ia-diagram" element={<OptiFlowIADiagram />} />
-            <Route path="/demo/ai-agent-flow-diagram" element={<AIAgentFlowDiagram />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
